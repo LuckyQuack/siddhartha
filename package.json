@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev renderer -p 3000",
     "build": "next build renderer",
-    "electron:dev": "concurrently --kill-others \"npm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
+    "electron:dev": "concurrently --kill-others \"npm run dev\" \"tsc -p electron/tsconfig.json && wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "npm run build && electron-builder",
     "test": "jest",
     "tsc:electron": "tsc --project electron/tsconfig.json",
