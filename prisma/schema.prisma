@@ -1,0 +1,117 @@
+// Prisma schema for Siddartha reading app
+// Database: PostgreSQL (Supabase) with pgvector extension
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Book {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @db.Uuid
+  title       String
+  author      String?
+  filePath    String?
+  fileType    String?   // 'pdf' | 'epub' — enforced by DB CHECK constraint
+  coverUrl    String?
+  totalPages  Int?
+  createdAt   DateTime  @default(now())
+  lastOpened  DateTime?
+  updatedAt   DateTime  @default(now())
+
+  highlights      Highlight[]
+  readingSessions ReadingSession[]
+
+  @@index([userId])
+  @@map("books")
+}
+
+model Highlight {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @db.Uuid
+  bookId        String   @db.Uuid
+  selectedText  String
+  // context windows are mandatory for the memory system — never null in practice
+  contextBefore String?
+  contextAfter  String?
+  userNote      String?
+  chapter       String?
+  pageNumber    Int?
+  positionPct   Float?   // 0-1 scroll position — enforced by DB CHECK constraint
+  sessionId     String?  @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  embeddings  HighlightEmbedding[]
+  themes      HighlightTheme[]
+  connectionsA HighlightConnection[] @relation("ConnectionA")
+  connectionsB HighlightConnection[] @relation("ConnectionB")
+
+  @@index([bookId])
+  @@index([userId])
+  @@map("highlights")
+}
+
+model HighlightEmbedding {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  highlightId   String   @db.Uuid
+  embeddingType String   // 'text' | 'text_context' | 'note' — enforced by DB CHECK
+  // vector(1024) — pgvector type, not natively supported by Prisma
+  embedding     Unsupported("vector(1024)")?
+  model         String?
+  createdAt     DateTime @default(now())
+
+  highlight Highlight @relation(fields: [highlightId], references: [id], onDelete: Cascade)
+
+  @@index([highlightId])
+  @@map("highlight_embeddings")
+}
+
+model HighlightTheme {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  highlightId String   @db.Uuid
+  theme       String
+  confidence  Float?   // 0-1 — enforced by DB CHECK constraint
+  createdAt   DateTime @default(now())
+
+  highlight Highlight @relation(fields: [highlightId], references: [id], onDelete: Cascade)
+
+  @@map("highlight_themes")
+}
+
+model HighlightConnection {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  highlightAId String   @db.Uuid
+  highlightBId String   @db.Uuid
+  similarity   Float?   // cosine similarity — enforced by DB CHECK constraint
+  sharedThemes String[]
+  createdAt    DateTime @default(now())
+
+  highlightA Highlight @relation("ConnectionA", fields: [highlightAId], references: [id], onDelete: Cascade)
+  highlightB Highlight @relation("ConnectionB", fields: [highlightBId], references: [id], onDelete: Cascade)
+
+  @@unique([highlightAId, highlightBId])
+  @@index([highlightAId])
+  @@index([highlightBId])
+  @@map("highlight_connections")
+}
+
+model ReadingSession {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  bookId    String    @db.Uuid
+  startedAt DateTime?
+  endedAt   DateTime?
+  pagesRead Int?
+  updatedAt DateTime  @default(now())
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@map("reading_sessions")
+}
