@@ -1,77 +1,112 @@
-// Types shared between the Electron main process and the Next.js renderer.
-// Keep this file lean — only put types here that cross the IPC boundary.
+// Shared domain types used by both the Electron main process and the
+// Next.js renderer. Keep this file free of any runtime-specific imports
+// so it can be safely imported in either context.
+
+// ─── Literals ─────────────────────────────────────────────────────────────────
 
 export type FileType = 'pdf' | 'epub'
 
+// Three embeddings are stored per highlight. 'note' only exists when
+// the user has added an annotation to the highlight.
 export type EmbeddingType = 'text' | 'text_context' | 'note'
 
-// Mirrors the books table
+// ─── Database entities ─────────────────────────────────────────────────────────
+// These interfaces mirror the Postgres schema defined in CLAUDE.md exactly.
+// All uuid fields are typed as string (UUID v4 at runtime).
+// All timestamptz fields are typed as string (ISO 8601).
+
 export interface Book {
   id: string
-  userId: string
+  user_id: string
   title: string
   author: string | null
-  filePath: string | null
-  fileType: FileType | null
-  coverUrl: string | null
-  totalPages: number | null
-  createdAt: Date
-  lastOpened: Date | null
-  updatedAt: Date
+  /** Supabase Storage object path, e.g. "books/user123/moby-dick.pdf" */
+  file_path: string | null
+  file_type: FileType | null
+  cover_url: string | null
+  total_pages: number | null
+  created_at: string
+  last_opened: string | null
 }
 
-// Mirrors the highlights table
 export interface Highlight {
   id: string
-  userId: string
-  bookId: string
-  selectedText: string
-  contextBefore: string | null
-  contextAfter: string | null
-  userNote: string | null
+  user_id: string
+  book_id: string
+  /** Verbatim text the user selected. Never mutate after capture. */
+  selected_text: string
+  /** 150 words of text immediately before the selection. Required — never null. */
+  context_before: string
+  /** 150 words of text immediately after the selection. Required — never null. */
+  context_after: string
+  /** Optional annotation typed by the user. */
+  user_note: string | null
   chapter: string | null
-  pageNumber: number | null
-  positionPct: number | null
-  sessionId: string | null
-  createdAt: Date
-  updatedAt: Date
+  page_number: number | null
+  /** Fractional scroll position 0–1 within the document. */
+  position_pct: number | null
+  session_id: string | null
+  created_at: string
 }
 
-// Mirrors the reading_sessions table
-export interface ReadingSession {
+export interface HighlightEmbedding {
   id: string
-  userId: string
-  bookId: string
-  startedAt: Date | null
-  endedAt: Date | null
-  pagesRead: number | null
-  updatedAt: Date
+  highlight_id: string
+  embedding_type: EmbeddingType
+  /** 1024-dimensional float vector from Voyage AI voyage-3. */
+  embedding: number[]
+  /** Embedding model identifier, e.g. "voyage-3". */
+  model: string
+  created_at: string
 }
 
-// Mirrors the highlight_themes table
 export interface HighlightTheme {
   id: string
-  highlightId: string
+  highlight_id: string
+  /** Human-readable theme label extracted by Claude, e.g. "expert epistemics". */
   theme: string
-  confidence: number | null
-  createdAt: Date
+  /** Claude's confidence in this theme assignment, 0–1. */
+  confidence: number
+  created_at: string
 }
 
-// Mirrors the highlight_connections table
 export interface HighlightConnection {
   id: string
-  highlightAId: string
-  highlightBId: string
-  similarity: number | null
-  sharedThemes: string[]
-  createdAt: Date
+  highlight_a: string
+  highlight_b: string
+  /** Cosine similarity between the two highlight embeddings, 0–1. */
+  similarity: number
+  /** Themes shared by both highlights that explain the connection. */
+  shared_themes: string[]
+  created_at: string
 }
 
-// IPC channel names — keeps main and renderer in sync
-export const IPC_CHANNELS = {
-  OPEN_FILE: 'file:open',
-  SAVE_FILE: 'file:save',
-  GET_USER_DATA_PATH: 'app:getUserDataPath',
-} as const
+export interface ReadingSession {
+  id: string
+  user_id: string
+  book_id: string
+  started_at: string
+  ended_at: string | null
+  pages_read: number | null
+}
 
-export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
+// ─── IPC message types ─────────────────────────────────────────────────────────
+// Used to type the window.electron bridge defined in electron/preload.ts.
+
+export interface ElectronAPI {
+  /** Open the OS native file picker filtered to PDF and EPUB. Returns the
+   *  chosen file path or null if the user cancelled. */
+  openFileDialog: () => Promise<string | null>
+  /** Read a local file by absolute path and return its binary contents. */
+  readFile: (path: string) => Promise<Buffer>
+  /** Subscribe to menu-driven events forwarded from the main process. */
+  onMenuEvent: (event: string, callback: () => void) => void
+}
+
+// Augment the global Window type so renderer code can access the bridge
+// without unsafe casts.
+declare global {
+  interface Window {
+    electron: ElectronAPI
+  }
+}
