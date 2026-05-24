@@ -16,6 +16,7 @@ export default function LibraryPage() {
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   // Resolve the current user on mount. If no session exists, sign in
   // anonymously so the app works on first launch without a sign-up screen.
@@ -27,8 +28,11 @@ export default function LibraryPage() {
         return
       }
       const { data: signInData, error } = await supabase.auth.signInAnonymously()
-      if (signInData.user) setUserId(signInData.user.id)
-      else if (error) console.error('[auth] anonymous sign-in failed:', error.message)
+      if (signInData.user) {
+        setUserId(signInData.user.id)
+      } else if (error) {
+        setAuthError(error.message)
+      }
     }
     void resolveUser()
 
@@ -114,6 +118,11 @@ export default function LibraryPage() {
         </div>
       </header>
 
+      {authError && (
+        <div className="no-drag mx-6 mt-3 px-4 py-2.5 rounded-md bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-400">
+          Auth error: {authError} — enable Anonymous sign-ins in Supabase dashboard → Authentication → Providers
+        </div>
+      )}
       {importError && (
         <div className="no-drag mx-6 mt-3 px-4 py-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">
           Import failed: {importError}
