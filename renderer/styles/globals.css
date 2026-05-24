@@ -5,18 +5,18 @@
 /* ── Design tokens ──────────────────────────────────────────────────────────── */
 :root {
   /* Surface hierarchy — light mode defaults */
-  --surface-base: theme('colors.paper.50');
-  --surface-raised: theme('colors.white');
-  --surface-overlay: theme('colors.paper.100');
+  --surface-base: #faf9f7;
+  --surface-raised: #ffffff;
+  --surface-overlay: #f2f0ec;
 
   /* Text */
-  --text-primary: theme('colors.slate.900');
-  --text-secondary: theme('colors.slate.600');
-  --text-muted: theme('colors.slate.400');
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
 
-  /* Brand accent — a warm amber for highlighting */
-  --accent-highlight: theme('colors.amber.400');
-  --accent-highlight-bg: theme('colors.amber.50');
+  /* Brand accent — warm amber for highlighting */
+  --accent-highlight: #fbbf24;
+  --accent-highlight-bg: #fffbeb;
 
   /* Motion */
   --duration-fast: 120ms;
@@ -29,11 +29,11 @@
   --surface-raised: #1a1a1a;
   --surface-overlay: #242424;
 
-  --text-primary: theme('colors.slate.50');
-  --text-secondary: theme('colors.slate.400');
-  --text-muted: theme('colors.slate.600');
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
 
-  --accent-highlight: theme('colors.amber.400');
+  --accent-highlight: #fbbf24;
   --accent-highlight-bg: rgba(251, 191, 36, 0.12);
 }
 
