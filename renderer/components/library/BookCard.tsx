@@ -6,6 +6,7 @@ import type { Book } from '@shared/types'
 interface BookCardProps {
   book: Book
   onClick: (book: Book) => void
+  processing?: boolean | undefined
 }
 
 // Derive a deterministic hue (0-360) from the book title so every book
@@ -35,7 +36,7 @@ function relativeTime(iso: string): string {
   return rtf.format(-Math.floor(diff / month), 'month')
 }
 
-export function BookCard({ book, onClick }: BookCardProps) {
+export function BookCard({ book, onClick, processing = false }: BookCardProps) {
   const hue = hueFromTitle(book.title)
   const initial = book.title.charAt(0).toUpperCase()
 
@@ -77,6 +78,21 @@ export function BookCard({ book, onClick }: BookCardProps) {
 
         {/* Subtle specular sheen on hover */}
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none bg-gradient-to-br from-white/8 to-transparent" />
+
+        {/* Processing overlay — pulsing while upload/metadata runs in background */}
+        {processing && (
+          <div className="absolute inset-0 flex items-end justify-center pb-3 bg-black/40">
+            <div className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="w-1 h-1 rounded-full bg-amber-400"
+                  style={{ animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Metadata */}

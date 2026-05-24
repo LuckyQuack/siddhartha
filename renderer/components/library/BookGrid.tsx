@@ -7,9 +7,10 @@ import { BookCard } from './BookCard'
 interface BookGridProps {
   books: Book[]
   onBookClick: (book: Book) => void
+  processingIds?: Set<string>
 }
 
-export function BookGrid({ books, onBookClick }: BookGridProps) {
+export function BookGrid({ books, onBookClick, processingIds }: BookGridProps) {
   return (
     <div className="w-full px-6 py-6">
       <div className="flex items-baseline justify-between mb-6">
@@ -20,10 +21,14 @@ export function BookGrid({ books, onBookClick }: BookGridProps) {
           {books.length} {books.length === 1 ? 'book' : 'books'}
         </span>
       </div>
-
       <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
         {books.map((book) => (
-          <BookCard key={book.id} book={book} onClick={onBookClick} />
+          <BookCard
+            key={book.id}
+            book={book}
+            onClick={onBookClick}
+            processing={processingIds?.has(book.id)}
+          />
         ))}
       </div>
     </div>

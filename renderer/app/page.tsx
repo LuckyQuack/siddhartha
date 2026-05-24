@@ -5,98 +5,114 @@ import { BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BookGrid } from '@/components/library'
-import { getBooks, createBook } from '@/lib/db'
+import { getBooks, createBook, updateBook } from '@/lib/db'
 import { supabase } from '@/lib/db/supabase'
 import type { Book } from '@shared/types'
 
 const STORAGE_BUCKET = 'books'
 
+function titleFromPath(filePath: string): string {
+  const filename = filePath.replace(/\\/g, '/').split('/').pop() ?? 'Unknown'
+  return filename.replace(/\.(pdf|epub)$/i, '').replace(/[-_]+/g, ' ').trim() || 'Unknown'
+}
+
+function fileTypeFromPath(filePath: string): 'pdf' | 'epub' {
+  return /\.epub$/i.test(filePath) ? 'epub' : 'pdf'
+}
+
+function toStorageSlug(title: string): string {
+  return title
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+}
+
 export default function LibraryPage() {
   const [books, setBooks] = useState<Book[]>([])
-  const [isImporting, setIsImporting] = useState(false)
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
 
-  // Resolve the current user on mount. If no session exists, sign in
-  // anonymously so the app works on first launch without a sign-up screen.
   useEffect(() => {
     async function resolveUser() {
       const { data } = await supabase.auth.getUser()
-      if (data.user) {
-        setUserId(data.user.id)
-        return
-      }
+      if (data.user) { setUserId(data.user.id); return }
       const { data: signInData, error } = await supabase.auth.signInAnonymously()
-      if (signInData.user) {
-        setUserId(signInData.user.id)
-      } else if (error) {
-        setAuthError(error.message)
-      }
+      if (signInData.user) setUserId(signInData.user.id)
+      else if (error) setAuthError(error.message)
     }
     void resolveUser()
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
       setUserId(session?.user?.id ?? null)
     })
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  // Load library whenever the user resolves.
   useEffect(() => {
     if (!userId) return
     void getBooks(userId).then(setBooks)
   }, [userId])
 
   const handleImport = useCallback(async () => {
-    if (isImporting || !userId) return
-    setIsImporting(true)
-
+    if (isDialogOpen || !userId) return
+    setIsDialogOpen(true)
     setImportError(null)
+
     try {
+      // ── Phase 1: instant ──────────────────────────────────────────────────
+      // Open file dialog and create the book record immediately so the card
+      // appears in the grid without waiting for metadata extraction or upload.
       const filePath = await window.electron.openFileDialog()
+      setIsDialogOpen(false)
       if (!filePath) return
 
-      // Extract metadata + file bytes in one IPC round-trip.
-      const { metadata, fileBuffer } = await window.electron.importBook(filePath)
-
-      // Upload raw bytes to Supabase Storage.
-      const ext = metadata.file_type
-      // Normalize to ASCII-safe slug: strip non-alphanumeric, collapse hyphens, cap length.
-      const slug = metadata.title
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '') // strip diacritics
-        .replace(/[^a-zA-Z0-9]+/g, '-')  // non-alphanumeric → hyphen
-        .replace(/^-+|-+$/g, '')          // trim leading/trailing hyphens
-        .slice(0, 80)
-      const storagePath = `${userId}/${Date.now()}-${slug}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(storagePath, fileBuffer, {
-          contentType: ext === 'pdf' ? 'application/pdf' : 'application/epub+zip',
-          upsert: false,
-        })
-      if (uploadError) throw new Error(`Storage upload: ${uploadError.message}`)
-
-      // Persist the book record and prepend it to the grid.
       const book = await createBook({
         user_id: userId,
-        title: metadata.title,
-        author: metadata.author,
-        file_path: storagePath,
-        file_type: metadata.file_type,
-        total_pages: metadata.total_pages,
+        title: titleFromPath(filePath),
+        file_type: fileTypeFromPath(filePath),
       })
       setBooks((prev) => [book, ...prev])
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Import failed'
-      setImportError(msg)
-    } finally {
-      setIsImporting(false)
-    }
-  }, [isImporting, userId])
+      setProcessingIds((prev) => new Set(prev).add(book.id))
 
-  // Listen for "File > Import Book" from the app menu.
+      // ── Phase 2: background ───────────────────────────────────────────────
+      // Extract metadata + upload without blocking the UI.
+      void (async () => {
+        try {
+          const { metadata, fileBuffer } = await window.electron.importBook(filePath)
+          const slug = toStorageSlug(metadata.title)
+          const storagePath = `${userId}/${Date.now()}-${slug}.${metadata.file_type}`
+
+          const { error: uploadError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(storagePath, fileBuffer, {
+              contentType: metadata.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip',
+              upsert: false,
+            })
+          if (uploadError) throw new Error(`Storage: ${uploadError.message}`)
+
+          const updated = await updateBook(book.id, {
+            title: metadata.title,
+            author: metadata.author,
+            file_path: storagePath,
+            total_pages: metadata.total_pages,
+          })
+          setBooks((prev) => prev.map((b) => (b.id === book.id ? updated : b)))
+        } catch (err) {
+          setImportError(err instanceof Error ? err.message : 'Background import failed')
+        } finally {
+          setProcessingIds((prev) => { const s = new Set(prev); s.delete(book.id); return s })
+        }
+      })()
+    } catch (err) {
+      setIsDialogOpen(false)
+      setImportError(err instanceof Error ? err.message : 'Import failed')
+    }
+  }, [isDialogOpen, userId])
+
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electron) return
     window.electron.onMenuEvent('import-book', () => void handleImport())
@@ -108,19 +124,13 @@ export default function LibraryPage() {
 
   return (
     <main className="flex flex-col min-h-screen">
-      {/* Title bar — drag region so users can move the frameless window */}
       <header className="drag-region flex items-center justify-between px-6 py-4 border-b border-white/5">
         <span className="no-drag text-sm font-semibold tracking-wide text-[var(--text-secondary)] select-none">
           Siddartha
         </span>
-
         <div className="no-drag">
-          <Button
-            variant="primary"
-            onClick={() => void handleImport()}
-            disabled={isImporting || !userId}
-          >
-            {isImporting ? 'Importing…' : 'Import Book'}
+          <Button variant="primary" onClick={() => void handleImport()} disabled={isDialogOpen || !userId}>
+            {isDialogOpen ? 'Selecting…' : 'Import Book'}
           </Button>
         </div>
       </header>
@@ -136,7 +146,6 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Library content */}
       <section className="flex-1 overflow-y-auto">
         {books.length === 0 ? (
           <div className="flex items-center justify-center h-full p-8">
@@ -145,18 +154,14 @@ export default function LibraryPage() {
               title="Your library is empty"
               description="Import a PDF or EPUB to start reading. Your highlights and notes will be remembered forever."
               action={
-                <Button
-                  variant="primary"
-                  onClick={() => void handleImport()}
-                  disabled={isImporting || !userId}
-                >
-                  {isImporting ? 'Importing…' : 'Import your first book'}
+                <Button variant="primary" onClick={() => void handleImport()} disabled={isDialogOpen || !userId}>
+                  {isDialogOpen ? 'Selecting…' : 'Import your first book'}
                 </Button>
               }
             />
           </div>
         ) : (
-          <BookGrid books={books} onBookClick={handleBookClick} />
+          <BookGrid books={books} onBookClick={handleBookClick} processingIds={processingIds} />
         )}
       </section>
     </main>

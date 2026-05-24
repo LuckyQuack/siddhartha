@@ -34,6 +34,27 @@ export async function createBook(input: CreateBookInput): Promise<Book> {
   return data as Book
 }
 
+export type UpdateBookInput = {
+  title?: string
+  author?: string | null
+  file_path?: string | null
+  file_type?: 'pdf' | 'epub' | null
+  total_pages?: number | null
+  cover_url?: string | null
+}
+
+export async function updateBook(bookId: string, updates: UpdateBookInput): Promise<Book> {
+  const { data, error } = await supabase
+    .from('books')
+    .update(updates)
+    .eq('id', bookId)
+    .select()
+    .single()
+
+  if (error) throw new Error(`updateBook: ${error.message}`)
+  return data as Book
+}
+
 export async function updateLastOpened(bookId: string): Promise<void> {
   const { error } = await supabase
     .from('books')
