@@ -5,12 +5,30 @@
     "moduleResolution": "bundler",
     "jsx": "preserve",
     "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
-      "@/*": ["./*"],
-      "@shared/*": ["../shared/*"]
-    }
+      "@/*": [
+        "./*"
+      ],
+      "@shared/*": [
+        "../shared/*"
+      ]
+    },
+    "allowJs": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "isolatedModules": true
   },
-  "include": [".", "../shared"],
-  "exclude": ["node_modules"]
+  "include": [
+    ".",
+    "../shared",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

@@ -14,13 +14,23 @@ const STORAGE_BUCKET = 'books'
 export default function LibraryPage() {
   const [books, setBooks] = useState<Book[]>([])
   const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
 
-  // Resolve the current user on mount and keep in sync with auth changes.
+  // Resolve the current user on mount. If no session exists, sign in
+  // anonymously so the app works on first launch without a sign-up screen.
   useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setUserId(data.user.id)
-    })
+    async function resolveUser() {
+      const { data } = await supabase.auth.getUser()
+      if (data.user) {
+        setUserId(data.user.id)
+        return
+      }
+      const { data: signInData, error } = await supabase.auth.signInAnonymously()
+      if (signInData.user) setUserId(signInData.user.id)
+      else if (error) console.error('[auth] anonymous sign-in failed:', error.message)
+    }
+    void resolveUser()
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserId(session?.user?.id ?? null)
@@ -38,6 +48,7 @@ export default function LibraryPage() {
     if (isImporting || !userId) return
     setIsImporting(true)
 
+    setImportError(null)
     try {
       const filePath = await window.electron.openFileDialog()
       if (!filePath) return
@@ -67,8 +78,8 @@ export default function LibraryPage() {
       })
       setBooks((prev) => [book, ...prev])
     } catch (err) {
-      // Failed imports must never be silent — a toast will replace this in a future iteration.
-      console.error('[import] failed:', err)
+      const msg = err instanceof Error ? err.message : 'Import failed'
+      setImportError(msg)
     } finally {
       setIsImporting(false)
     }
@@ -102,6 +113,12 @@ export default function LibraryPage() {
           </Button>
         </div>
       </header>
+
+      {importError && (
+        <div className="no-drag mx-6 mt-3 px-4 py-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+          Import failed: {importError}
+        </div>
+      )}
 
       {/* Library content */}
       <section className="flex-1 overflow-y-auto">
