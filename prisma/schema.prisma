@@ -1,0 +1,110 @@
+// Prisma schema for Siddartha.
+// Database: Supabase Postgres with pgvector extension.
+// Run `npx prisma generate` after changes.
+// Run `npx supabase db push` to apply migrations (not prisma migrate).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Book {
+  id          String    @id @default(uuid())
+  user_id     String
+  title       String
+  author      String?
+  file_path   String?
+  file_type   String?
+  cover_url   String?
+  total_pages Int?
+  created_at  DateTime  @default(now())
+  last_opened DateTime?
+
+  highlights      Highlight[]
+  reading_sessions ReadingSession[]
+
+  @@map("books")
+}
+
+model Highlight {
+  id             String   @id @default(uuid())
+  user_id        String
+  book_id        String
+  selected_text  String
+  context_before String
+  context_after  String
+  user_note      String?
+  chapter        String?
+  page_number    Int?
+  position_pct   Float?
+  session_id     String?
+  created_at     DateTime @default(now())
+
+  book        Book                  @relation(fields: [book_id], references: [id])
+  embeddings  HighlightEmbedding[]
+  themes      HighlightTheme[]
+  connections_a HighlightConnection[] @relation("ConnectionA")
+  connections_b HighlightConnection[] @relation("ConnectionB")
+
+  @@map("highlights")
+}
+
+// pgvector column (embedding vector(1024)) is managed via raw SQL migration
+// because Prisma does not natively support vector types yet.
+// The embedding field is omitted here and accessed via prisma.$queryRaw.
+model HighlightEmbedding {
+  id             String   @id @default(uuid())
+  highlight_id   String
+  embedding_type String
+  model          String
+  created_at     DateTime @default(now())
+
+  highlight Highlight @relation(fields: [highlight_id], references: [id])
+
+  @@map("highlight_embeddings")
+}
+
+model HighlightTheme {
+  id           String   @id @default(uuid())
+  highlight_id String
+  theme        String
+  confidence   Float
+  created_at   DateTime @default(now())
+
+  highlight Highlight @relation(fields: [highlight_id], references: [id])
+
+  @@map("highlight_themes")
+}
+
+model HighlightConnection {
+  id            String   @id @default(uuid())
+  highlight_a   String
+  highlight_b   String
+  similarity    Float
+  shared_themes String[]
+  created_at    DateTime @default(now())
+
+  highlightA Highlight @relation("ConnectionA", fields: [highlight_a], references: [id])
+  highlightB Highlight @relation("ConnectionB", fields: [highlight_b], references: [id])
+
+  @@unique([highlight_a, highlight_b])
+  @@map("highlight_connections")
+}
+
+model ReadingSession {
+  id         String    @id @default(uuid())
+  user_id    String
+  book_id    String
+  started_at DateTime
+  ended_at   DateTime?
+  pages_read Int?
+
+  book Book @relation(fields: [book_id], references: [id])
+
+  @@map("reading_sessions")
+}

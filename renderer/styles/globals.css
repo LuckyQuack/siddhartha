@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ──────────────────────────────────────────────────────────── */
+:root {
+  /* Surface hierarchy — light mode defaults */
+  --surface-base: theme('colors.paper.50');
+  --surface-raised: theme('colors.white');
+  --surface-overlay: theme('colors.paper.100');
+
+  /* Text */
+  --text-primary: theme('colors.slate.900');
+  --text-secondary: theme('colors.slate.600');
+  --text-muted: theme('colors.slate.400');
+
+  /* Brand accent — a warm amber for highlighting */
+  --accent-highlight: theme('colors.amber.400');
+  --accent-highlight-bg: theme('colors.amber.50');
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-normal: 240ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark {
+  --surface-base: #0f0f0f;
+  --surface-raised: #1a1a1a;
+  --surface-overlay: #242424;
+
+  --text-primary: theme('colors.slate.50');
+  --text-secondary: theme('colors.slate.400');
+  --text-muted: theme('colors.slate.600');
+
+  --accent-highlight: theme('colors.amber.400');
+  --accent-highlight-bg: rgba(251, 191, 36, 0.12);
+}
+
+/* ── Base reset ─────────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* Prevent rubber-band scroll — Electron apps aren't web pages. */
+  overscroll-behavior: none;
+}
+
+body {
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Electron window drag region ────────────────────────────────────────────── */
+/* The title-bar area is drag-able so the user can move the frameless window. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
