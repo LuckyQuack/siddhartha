@@ -17,7 +17,7 @@ const lora = Lora({
 })
 
 export const metadata: Metadata = {
-  title: 'Siddartha',
+  title: 'Siddhartha',
   description: 'Your AI-powered reading companion',
 }
 

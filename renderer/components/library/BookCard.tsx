@@ -38,7 +38,6 @@ function relativeTime(iso: string): string {
 
 export function BookCard({ book, onClick, processing = false }: BookCardProps) {
   const hue = hueFromTitle(book.title)
-  const initial = book.title.charAt(0).toUpperCase()
 
   return (
     <button
@@ -60,19 +59,39 @@ export function BookCard({ book, onClick, processing = false }: BookCardProps) {
             draggable={false}
           />
         ) : (
-          // Generated cover: gradient spine with title initial
+          // Generated cover: gradient with title and author text
           <div
-            className="w-full h-full flex items-center justify-center select-none"
+            className="w-full h-full flex flex-col items-center justify-between p-3 select-none"
             style={{
               background: `linear-gradient(160deg, hsl(${hue},45%,28%) 0%, hsl(${hue},38%,18%) 100%)`,
             }}
           >
-            <span
-              className="text-5xl font-serif font-bold opacity-30 pointer-events-none"
-              style={{ color: `hsl(${hue},60%,80%)` }}
+            {/* Top decorative rule */}
+            <div className="w-full flex flex-col gap-0.5 opacity-25 pt-1">
+              <div className="h-px w-full" style={{ background: `hsl(${hue},60%,75%)` }} />
+              <div className="h-px w-3/4" style={{ background: `hsl(${hue},60%,75%)` }} />
+            </div>
+
+            {/* Title */}
+            <p
+              className="flex-1 flex items-center text-center text-xs font-serif font-semibold leading-snug line-clamp-5 px-1 py-2 pointer-events-none"
+              style={{ color: `hsl(${hue},70%,88%)` }}
             >
-              {initial}
-            </span>
+              {book.title}
+            </p>
+
+            {/* Author + bottom rule */}
+            <div className="w-full flex flex-col gap-1.5 items-center">
+              {book.author && (
+                <p
+                  className="text-center text-[9px] font-medium tracking-wide uppercase opacity-60 w-full truncate pointer-events-none"
+                  style={{ color: `hsl(${hue},55%,80%)` }}
+                >
+                  {book.author}
+                </p>
+              )}
+              <div className="h-px w-full opacity-25" style={{ background: `hsl(${hue},60%,75%)` }} />
+            </div>
           </div>
         )}
 

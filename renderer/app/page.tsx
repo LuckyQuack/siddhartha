@@ -82,23 +82,42 @@ export default function LibraryPage() {
       // Extract metadata + upload without blocking the UI.
       void (async () => {
         try {
-          const { metadata, fileBuffer } = await window.electron.importBook(filePath)
-          const slug = toStorageSlug(metadata.title)
-          const storagePath = `${userId}/${Date.now()}-${slug}.${metadata.file_type}`
+          const { metadata, fileBuffer, coverBuffer, coverMimeType } =
+            await window.electron.importBook(filePath)
 
-          const { error: uploadError } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .upload(storagePath, fileBuffer, {
-              contentType: metadata.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip',
+          const slug = toStorageSlug(metadata.title)
+          const ts = Date.now()
+          const storagePath = `${userId}/${ts}-${slug}.${metadata.file_type}`
+          const coverExt = coverMimeType === 'image/png' ? 'png' : 'jpg'
+          const coverPath = `${userId}/covers/${ts}-${slug}.${coverExt}`
+
+          // Upload the book file and cover image in parallel
+          const [bookUpload, coverUpload] = await Promise.all([
+            supabase.storage.from(STORAGE_BUCKET).upload(storagePath, fileBuffer, {
+              contentType:
+                metadata.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip',
               upsert: false,
-            })
-          if (uploadError) throw new Error(`Storage: ${uploadError.message}`)
+            }),
+            coverBuffer && coverMimeType
+              ? supabase.storage
+                  .from(STORAGE_BUCKET)
+                  .upload(coverPath, coverBuffer, { contentType: coverMimeType, upsert: false })
+              : Promise.resolve(null),
+          ])
+
+          if (bookUpload.error) throw new Error(`Storage: ${bookUpload.error.message}`)
+
+          let coverUrl: string | null = null
+          if (coverUpload && !coverUpload.error) {
+            coverUrl = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(coverPath).data.publicUrl
+          }
 
           const updated = await updateBook(book.id, {
             title: metadata.title,
             author: metadata.author,
             file_path: storagePath,
             total_pages: metadata.total_pages,
+            cover_url: coverUrl,
           })
           setBooks((prev) => prev.map((b) => (b.id === book.id ? updated : b)))
         } catch (err) {
@@ -126,7 +145,7 @@ export default function LibraryPage() {
     <main className="flex flex-col min-h-screen">
       <header className="drag-region flex items-center justify-between px-6 py-4 border-b border-white/5">
         <span className="no-drag text-sm font-semibold tracking-wide text-[var(--text-secondary)] select-none">
-          Siddartha
+          Siddhartha
         </span>
         <div className="no-drag">
           <Button variant="primary" onClick={() => void handleImport()} disabled={isDialogOpen || !userId}>

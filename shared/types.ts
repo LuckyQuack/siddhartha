@@ -105,6 +105,10 @@ export interface ImportBookResult {
   metadata: BookMetadata
   /** Raw file bytes (Uint8Array) for upload to Supabase Storage. */
   fileBuffer: Uint8Array
+  /** Cover image bytes extracted from the EPUB (null for PDF or if not found). */
+  coverBuffer: Uint8Array | null
+  /** MIME type of the cover image, e.g. 'image/jpeg'. */
+  coverMimeType: string | null
 }
 
 // ─── IPC message types ─────────────────────────────────────────────────────────

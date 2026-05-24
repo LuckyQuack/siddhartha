@@ -14,7 +14,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'Siddartha',
+    title: 'Siddhartha',
     backgroundColor: '#0f0f0f',
     webPreferences: {
       // Preload runs in a privileged context before the renderer.
@@ -56,7 +56,7 @@ function createWindow(): void {
 function buildAppMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Siddartha',
+      label: 'Siddhartha',
       submenu: [
         { role: 'about' },
         { type: 'separator' },

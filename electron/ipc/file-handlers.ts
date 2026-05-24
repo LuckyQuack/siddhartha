@@ -1,7 +1,7 @@
 import { dialog, ipcMain } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { extractPdfMetadata, extractEpubMetadata } from './metadata-extractor'
+import { extractPdfMetadata, extractEpubMetadata, extractEpubCover } from './metadata-extractor'
 import type { ImportBookResult } from '../../shared/types'
 
 // IPC channel names — kept as constants to avoid typos across main/preload.
@@ -72,11 +72,18 @@ export function registerFileHandlers(): void {
 
     const buffer = fs.readFileSync(resolved)
     const ext = path.extname(resolved).toLowerCase()
-    const metadata =
-      ext === '.epub'
-        ? await extractEpubMetadata(resolved, buffer)
-        : await extractPdfMetadata(resolved, buffer)
+    const isEpub = ext === '.epub'
 
-    return { metadata, fileBuffer: new Uint8Array(buffer) }
+    const [metadata, cover] = await Promise.all([
+      isEpub ? extractEpubMetadata(resolved, buffer) : extractPdfMetadata(resolved, buffer),
+      isEpub ? extractEpubCover(buffer) : Promise.resolve(null),
+    ])
+
+    return {
+      metadata,
+      fileBuffer: new Uint8Array(buffer),
+      coverBuffer: cover ? new Uint8Array(cover.data) : null,
+      coverMimeType: cover?.mimeType ?? null,
+    }
   })
 }
