@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "AI-powered reading companion — semantic memory across your reading life",
   "license": "Apache-2.0",
-  "main": "electron/dist/main.js",
+  "main": "electron/dist/electron/main.js",
   "scripts": {
     "dev": "next dev renderer -p 3000",
     "build": "next build renderer",
