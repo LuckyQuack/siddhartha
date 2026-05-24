@@ -62,7 +62,14 @@ export default function LibraryPage() {
 
       // Upload raw bytes to Supabase Storage.
       const ext = metadata.file_type
-      const storagePath = `${userId}/${Date.now()}-${metadata.title.replace(/\s+/g, '-')}.${ext}`
+      // Normalize to ASCII-safe slug: strip non-alphanumeric, collapse hyphens, cap length.
+      const slug = metadata.title
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '') // strip diacritics
+        .replace(/[^a-zA-Z0-9]+/g, '-')  // non-alphanumeric → hyphen
+        .replace(/^-+|-+$/g, '')          // trim leading/trailing hyphens
+        .slice(0, 80)
+      const storagePath = `${userId}/${Date.now()}-${slug}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
         .upload(storagePath, fileBuffer, {
