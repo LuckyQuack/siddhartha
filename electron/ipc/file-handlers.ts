@@ -1,10 +1,13 @@
 import { dialog, ipcMain } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { extractPdfMetadata, extractEpubMetadata } from './metadata-extractor'
+import type { ImportBookResult } from '../../shared/types'
 
 // IPC channel names — kept as constants to avoid typos across main/preload.
 export const IPC_OPEN_FILE_DIALOG = 'open-file-dialog'
 export const IPC_READ_FILE = 'read-file'
+export const IPC_IMPORT_BOOK = 'import-book'
 
 /**
  * Register all file-related IPC handlers.
@@ -52,5 +55,28 @@ export function registerFileHandlers(): void {
     }
 
     return fs.readFileSync(resolved)
+  })
+
+  // Opens the file dialog, reads the file, and extracts metadata in one round-trip.
+  // Returns ImportBookResult so the renderer can upload and persist without a
+  // second IPC call for the file bytes.
+  ipcMain.handle(IPC_IMPORT_BOOK, async (_event, filePath: unknown): Promise<ImportBookResult> => {
+    if (typeof filePath !== 'string') {
+      throw new Error('importBook: filePath must be a string')
+    }
+
+    const resolved = path.resolve(filePath)
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`importBook: file not found at ${resolved}`)
+    }
+
+    const buffer = fs.readFileSync(resolved)
+    const ext = path.extname(resolved).toLowerCase()
+    const metadata =
+      ext === '.epub'
+        ? await extractEpubMetadata(resolved, buffer)
+        : await extractPdfMetadata(resolved, buffer)
+
+    return { metadata, fileBuffer: new Uint8Array(buffer) }
   })
 }

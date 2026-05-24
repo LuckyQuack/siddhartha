@@ -90,6 +90,23 @@ export interface ReadingSession {
   pages_read: number | null
 }
 
+// ─── Import pipeline types ─────────────────────────────────────────────────────
+
+export interface BookMetadata {
+  title: string
+  author: string | null
+  total_pages: number | null
+  file_type: FileType
+  local_path: string
+  file_size: number
+}
+
+export interface ImportBookResult {
+  metadata: BookMetadata
+  /** Raw file bytes (Uint8Array) for upload to Supabase Storage. */
+  fileBuffer: Uint8Array
+}
+
 // ─── IPC message types ─────────────────────────────────────────────────────────
 // Used to type the window.electron bridge defined in electron/preload.ts.
 
@@ -99,6 +116,8 @@ export interface ElectronAPI {
   openFileDialog: () => Promise<string | null>
   /** Read a local file by absolute path and return its binary contents. */
   readFile: (path: string) => Promise<Buffer>
+  /** Extract metadata and read file bytes in a single IPC round-trip. */
+  importBook: (filePath: string) => Promise<ImportBookResult>
   /** Subscribe to menu-driven events forwarded from the main process. */
   onMenuEvent: (event: string, callback: () => void) => void
 }
