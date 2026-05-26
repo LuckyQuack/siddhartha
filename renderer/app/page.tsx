@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -8,6 +9,7 @@ import { BookGrid } from '@/components/library'
 import { getBooks, createBook, updateBook } from '@/lib/db'
 import { supabase } from '@/lib/db/supabase'
 import type { Book } from '@shared/types'
+import type { ImportProgress } from '@/components/library/BookCard'
 
 const STORAGE_BUCKET = 'books'
 
@@ -29,9 +31,51 @@ function toStorageSlug(title: string): string {
     .slice(0, 80)
 }
 
+// XHR upload so we get real upload-progress events — the Supabase client
+// doesn't expose them. Falls back to a plain fetch error message on failure.
+async function uploadWithProgress(
+  path: string,
+  data: Uint8Array,
+  contentType: string,
+  onProgress: (pct: number) => void
+): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!supabaseUrl) throw new Error('NEXT_PUBLIC_SUPABASE_URL not set')
+
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('No auth session for upload')
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${supabaseUrl}/storage/v1/object/${STORAGE_BUCKET}/${path}`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.setRequestHeader('Content-Type', contentType)
+    xhr.setRequestHeader('x-upsert', 'false')
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    })
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        let msg = xhr.responseText
+        try { msg = (JSON.parse(xhr.responseText) as { error?: string }).error ?? msg } catch { /* raw text */ }
+        reject(new Error(`Upload failed (${xhr.status}): ${msg}`))
+      }
+    })
+
+    xhr.addEventListener('error', () => reject(new Error('Upload failed — network error')))
+    xhr.send(data as unknown as XMLHttpRequestBodyInit)
+  })
+}
+
 export default function LibraryPage() {
+  const router = useRouter()
   const [books, setBooks] = useState<Book[]>([])
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
+  const [importProgress, setImportProgress] = useState<Map<string, ImportProgress>>(new Map())
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
@@ -57,6 +101,14 @@ export default function LibraryPage() {
     void getBooks(userId).then(setBooks)
   }, [userId])
 
+  function setProgress(bookId: string, progress: ImportProgress) {
+    setImportProgress((prev) => new Map(prev).set(bookId, progress))
+  }
+
+  function clearProgress(bookId: string) {
+    setImportProgress((prev) => { const m = new Map(prev); m.delete(bookId); return m })
+  }
+
   const handleImport = useCallback(async () => {
     if (isDialogOpen || !userId) return
     setIsDialogOpen(true)
@@ -64,8 +116,6 @@ export default function LibraryPage() {
 
     try {
       // ── Phase 1: instant ──────────────────────────────────────────────────
-      // Open file dialog and create the book record immediately so the card
-      // appears in the grid without waiting for metadata extraction or upload.
       const filePath = await window.electron.openFileDialog()
       setIsDialogOpen(false)
       if (!filePath) return
@@ -76,41 +126,54 @@ export default function LibraryPage() {
         file_type: fileTypeFromPath(filePath),
       })
       setBooks((prev) => [book, ...prev])
-      setProcessingIds((prev) => new Set(prev).add(book.id))
+      setProgress(book.id, { phase: 'extracting', pct: 0 })
 
       // ── Phase 2: background ───────────────────────────────────────────────
-      // Extract metadata + upload without blocking the UI.
       void (async () => {
         try {
+          // Extracting metadata + cover from the local file via IPC
           const { metadata, fileBuffer, coverBuffer, coverMimeType } =
             await window.electron.importBook(filePath)
 
           const slug = toStorageSlug(metadata.title)
           const ts = Date.now()
           const storagePath = `${userId}/${ts}-${slug}.${metadata.file_type}`
-          const coverExt = coverMimeType === 'image/png' ? 'png' : 'jpg'
-          const coverPath = `${userId}/covers/${ts}-${slug}.${coverExt}`
+          const bookContentType =
+            metadata.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip'
 
-          // Upload the book file and cover image in parallel
-          const [bookUpload, coverUpload] = await Promise.all([
-            supabase.storage.from(STORAGE_BUCKET).upload(storagePath, fileBuffer, {
-              contentType:
-                metadata.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip',
-              upsert: false,
-            }),
-            coverBuffer && coverMimeType
-              ? supabase.storage
-                  .from(STORAGE_BUCKET)
-                  .upload(coverPath, coverBuffer, { contentType: coverMimeType, upsert: false })
-              : Promise.resolve(null),
-          ])
+          setProgress(book.id, { phase: 'uploading', pct: 0 })
 
-          if (bookUpload.error) throw new Error(`Storage: ${bookUpload.error.message}`)
+          // Upload book file via XHR so we get real progress events
+          await uploadWithProgress(storagePath, fileBuffer, bookContentType, (pct) => {
+            setProgress(book.id, { phase: 'uploading', pct })
+          })
 
+          // Upload cover via Supabase client (small file, no progress needed)
           let coverUrl: string | null = null
-          if (coverUpload && !coverUpload.error) {
-            coverUrl = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(coverPath).data.publicUrl
+          if (coverBuffer && coverMimeType) {
+            const coverExt = coverMimeType === 'image/png' ? 'png' : 'jpg'
+            const coverPath = `${userId}/covers/${ts}-${slug}.${coverExt}`
+            const { error: coverErr } = await supabase.storage
+              .from(STORAGE_BUCKET)
+              .upload(coverPath, coverBuffer, { contentType: coverMimeType, upsert: false })
+            if (coverErr) {
+              console.warn('[import] Cover upload failed:', coverErr.message)
+            } else {
+              // Use a long-lived signed URL so covers work whether the bucket is
+              // public or private. 1 year TTL — BookCard has an onError fallback
+              // if the URL ever expires.
+              const { data: signed, error: signErr } = await supabase.storage
+                .from(STORAGE_BUCKET)
+                .createSignedUrl(coverPath, 60 * 60 * 24 * 365)
+              if (signErr) {
+                console.warn('[import] Cover sign failed:', signErr.message)
+              } else {
+                coverUrl = signed.signedUrl
+              }
+            }
           }
+
+          setProgress(book.id, { phase: 'saving', pct: 100 })
 
           const updated = await updateBook(book.id, {
             title: metadata.title,
@@ -121,9 +184,9 @@ export default function LibraryPage() {
           })
           setBooks((prev) => prev.map((b) => (b.id === book.id ? updated : b)))
         } catch (err) {
-          setImportError(err instanceof Error ? err.message : 'Background import failed')
+          setImportError(err instanceof Error ? err.message : 'Import failed')
         } finally {
-          setProcessingIds((prev) => { const s = new Set(prev); s.delete(book.id); return s })
+          clearProgress(book.id)
         }
       })()
     } catch (err) {
@@ -137,9 +200,9 @@ export default function LibraryPage() {
     window.electron.onMenuEvent('import-book', () => void handleImport())
   }, [handleImport])
 
-  const handleBookClick = useCallback((_book: Book) => {
-    // Reader view wired up in step 4.
-  }, [])
+  const handleBookClick = useCallback((book: Book) => {
+    router.push(`/read/${book.id}`)
+  }, [router])
 
   return (
     <main className="flex flex-col min-h-screen">
@@ -180,7 +243,7 @@ export default function LibraryPage() {
             />
           </div>
         ) : (
-          <BookGrid books={books} onBookClick={handleBookClick} processingIds={processingIds} />
+          <BookGrid books={books} onBookClick={handleBookClick} importProgress={importProgress} />
         )}
       </section>
     </main>

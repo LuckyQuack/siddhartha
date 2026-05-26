@@ -1,101 +1,120 @@
 import * as path from 'path'
-import type { BookMetadata, FileType } from '../../shared/types'
+import type { BookMetadata } from '../../shared/types'
 
-// Minimal JSZip interface — jszip is a direct dep of epubjs and is always present.
+// ─── Minimal JSZip interface ───────────────────────────────────────────────────
+// jszip is a direct dep of epubjs and is always hoisted to top-level node_modules.
 interface ZipObject {
   async(type: 'text'): Promise<string>
   async(type: 'nodebuffer'): Promise<Buffer>
+  dir: boolean
 }
 interface ZipInstance {
   file(name: string): ZipObject | null
+  files: Record<string, ZipObject>
 }
 interface JSZipStatic {
   loadAsync(data: Buffer): Promise<ZipInstance>
 }
 
-function fileTypeFromPath(filePath: string): FileType {
-  const ext = path.extname(filePath).toLowerCase()
-  return ext === '.epub' ? 'epub' : 'pdf'
-}
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function titleFromPath(filePath: string): string {
   return path.basename(filePath, path.extname(filePath)).replace(/[-_]/g, ' ')
 }
 
-export async function extractPdfMetadata(
+function zipFile(zip: ZipInstance, name: string): ZipObject | null {
+  const exact = zip.file(name)
+  if (exact) return exact
+  const lower = name.toLowerCase()
+  const match = Object.keys(zip.files).find((k) => k.toLowerCase() === lower)
+  return match ? (zip.files[match] ?? null) : null
+}
+
+function resolveZipPath(href: string, opfDir: string): string {
+  const decoded = decodeURIComponent(href)
+  if (decoded.startsWith('/')) return decoded.slice(1)
+  const parts = (opfDir + decoded).split('/')
+  const out: string[] = []
+  for (const p of parts) {
+    if (p === '..') out.pop()
+    else if (p !== '.') out.push(p)
+  }
+  return out.join('/')
+}
+
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|svg|avif)$/i
+const IMAGE_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', avif: 'image/avif',
+}
+
+// ─── EPUB ──────────────────────────────────────────────────────────────────────
+
+export interface EpubInfo {
+  metadata: BookMetadata
+  cover: { data: Buffer; mimeType: string } | null
+}
+
+/**
+ * Single JSZip pass: extracts title, author, and cover from an EPUB.
+ *
+ * Previously this used epubjs (extractEpubMetadata) + JSZip (extractEpubCover)
+ * in two separate passes. epubjs runs in the Electron main process (Node.js,
+ * no DOM), where epub.js's internal `book.ready` Promise can stall permanently
+ * if any browser API it relies on is absent. That caused the infinite hang.
+ *
+ * JSZip is pure Node.js with no browser dependencies — it cannot hang.
+ */
+export async function extractEpubInfo(
   filePath: string,
   buffer: Buffer
-): Promise<BookMetadata> {
-  try {
-    // pdfjs-dist legacy build works in Node.js without a DOM.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js') as typeof import('pdfjs-dist')
-    // Disable the web worker — we're in Node.js, not a browser.
-    pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
-    const rawMeta = await doc.getMetadata().catch(() => null)
-
-    const info = rawMeta?.info as Record<string, unknown> | undefined
-    const title =
-      typeof info?.Title === 'string' && info.Title.trim()
-        ? info.Title.trim()
-        : titleFromPath(filePath)
-    const author =
-      typeof info?.Author === 'string' && info.Author.trim()
-        ? info.Author.trim()
-        : null
-
-    return {
-      title,
-      author,
-      total_pages: doc.numPages,
-      file_type: 'pdf',
-      local_path: filePath,
-      file_size: buffer.length,
-    }
-  } catch {
-    return {
+): Promise<EpubInfo> {
+  const fallback: EpubInfo = {
+    metadata: {
       title: titleFromPath(filePath),
       author: null,
       total_pages: null,
-      file_type: 'pdf',
+      file_type: 'epub',
       local_path: filePath,
       file_size: buffer.length,
-    }
+    },
+    cover: null,
   }
-}
 
-/** Extract the cover image bytes from an EPUB zip. Returns null if no cover found. */
-export async function extractEpubCover(
-  buffer: Buffer
-): Promise<{ data: Buffer; mimeType: string } | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const JSZip = require('jszip') as JSZipStatic
     const zip = await JSZip.loadAsync(buffer)
 
-    // Locate the OPF content document via the standard container
-    const containerFile = zip.file('META-INF/container.xml')
-    if (!containerFile) return null
+    // ── Locate OPF ─────────────────────────────────────────────────────────────
+    const containerFile = zipFile(zip, 'META-INF/container.xml')
+    if (!containerFile) return fallback
+
     const containerXml = await containerFile.async('text')
-    const opfPathMatch = /full-path="([^"]+)"/.exec(containerXml)
-    const opfPath = opfPathMatch?.[1]
-    if (!opfPath) return null
+    const opfPathRaw = /full-path="([^"]+)"/.exec(containerXml)?.[1]
+    if (!opfPathRaw) return fallback
 
-    const opfFile = zip.file(opfPath)
-    if (!opfFile) return null
+    const opfFile = zipFile(zip, opfPathRaw)
+    if (!opfFile) return fallback
+
     const opfXml = await opfFile.async('text')
+    const opfDir = opfPathRaw.includes('/')
+      ? opfPathRaw.slice(0, opfPathRaw.lastIndexOf('/') + 1)
+      : ''
 
-    // OPF-relative directory prefix used for resolving item hrefs
-    const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : ''
+    // ── Metadata ───────────────────────────────────────────────────────────────
+    const title =
+      /<dc:title\b[^>]*>([^<]+)<\/dc:title>/i.exec(opfXml)?.[1]?.trim() ||
+      titleFromPath(filePath)
+    const author =
+      /<dc:creator\b[^>]*>([^<]+)<\/dc:creator>/i.exec(opfXml)?.[1]?.trim() ||
+      null
 
-    function getAttr(tag: string, name: string): string | null {
-      const m = new RegExp(`\\b${name}="([^"]+)"`).exec(tag)
-      return m?.[1] ?? null
+    // ── Cover image ────────────────────────────────────────────────────────────
+    function getAttr(tag: string, attrName: string): string | null {
+      return new RegExp(`\\b${attrName}="([^"]+)"`).exec(tag)?.[1] ?? null
     }
 
-    // Build a map of all manifest items
     const items: Array<{ id: string; href: string; mediaType: string; properties: string }> = []
     for (const m of opfXml.matchAll(/<item\b[^>]*\/?>/g)) {
       const tag = m[0]
@@ -109,7 +128,7 @@ export async function extractEpubCover(
       })
     }
 
-    // EPUB3: manifest item with properties="cover-image"
+    // EPUB3: properties="cover-image"
     let coverItem = items.find((i) => i.properties.split(/\s+/).includes('cover-image'))
 
     // EPUB2: <meta name="cover" content="<item-id>"/>
@@ -117,63 +136,106 @@ export async function extractEpubCover(
       const metaMatch =
         /<meta\s[^>]*name="cover"[^>]*content="([^"]+)"/.exec(opfXml) ??
         /<meta\s[^>]*content="([^"]+)"[^>]*name="cover"/.exec(opfXml)
-      if (metaMatch) {
-        const coverId = metaMatch[1]
-        coverItem = items.find((i) => i.id === coverId)
+      if (metaMatch) coverItem = items.find((i) => i.id === metaMatch[1])
+    }
+
+    let cover: { data: Buffer; mimeType: string } | null = null
+
+    if (coverItem?.mediaType.startsWith('image/')) {
+      const f = zipFile(zip, resolveZipPath(coverItem.href, opfDir))
+      if (f) cover = { data: await f.async('nodebuffer'), mimeType: coverItem.mediaType }
+    }
+
+    // Fallback: any file with "cover" in its name
+    if (!cover) {
+      const byName = Object.keys(zip.files).find((n) => {
+        const f = zip.files[n]
+        return f && !f.dir && n.toLowerCase().includes('cover') && IMAGE_EXT.test(n)
+      })
+      if (byName) {
+        const ext = byName.split('.').pop()?.toLowerCase() ?? ''
+        const f = zip.files[byName]
+        if (f) cover = { data: await f.async('nodebuffer'), mimeType: IMAGE_MIME[ext] ?? 'image/jpeg' }
       }
     }
 
-    if (!coverItem?.mediaType.startsWith('image/')) return null
+    // Fallback: first image in the zip
+    if (!cover) {
+      const firstImage = Object.keys(zip.files).find((n) => {
+        const f = zip.files[n]
+        return f && !f.dir && IMAGE_EXT.test(n)
+      })
+      if (firstImage) {
+        const ext = firstImage.split('.').pop()?.toLowerCase() ?? ''
+        const f = zip.files[firstImage]
+        if (f) cover = { data: await f.async('nodebuffer'), mimeType: IMAGE_MIME[ext] ?? 'image/jpeg' }
+      }
+    }
 
-    const coverPath = opfDir + coverItem.href
-    const coverFile = zip.file(coverPath)
-    if (!coverFile) return null
-
-    const data = await coverFile.async('nodebuffer')
-    return { data, mimeType: coverItem.mediaType }
+    return {
+      metadata: {
+        title,
+        author,
+        total_pages: null, // EPUB page count requires a layout engine — not worth it here
+        file_type: 'epub',
+        local_path: filePath,
+        file_size: buffer.length,
+      },
+      cover,
+    }
   } catch {
-    return null
+    return fallback
   }
 }
 
-export async function extractEpubMetadata(
-  filePath: string,
-  buffer: Buffer
-): Promise<BookMetadata> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-    const EpubModule = require('epubjs') as any
-    const EpubCtor = EpubModule.default ?? EpubModule
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    const book = EpubCtor(buffer.buffer as ArrayBuffer) as import('epubjs').Book
-    await book.ready
+// ─── PDF ───────────────────────────────────────────────────────────────────────
 
-    const meta = book.packaging?.metadata as unknown as Record<string, unknown> | undefined
-    const title =
-      typeof meta?.title === 'string' && meta.title.trim()
-        ? meta.title.trim()
-        : titleFromPath(filePath)
-    const author =
-      typeof meta?.creator === 'string' && meta.creator.trim()
-        ? meta.creator.trim()
-        : null
+/**
+ * Extracts title, author, and page count from a PDF buffer without loading
+ * pdfjs-dist or any other rendering library.
+ *
+ * Previously this used pdfjs-dist, which stalls permanently in Node.js
+ * (no DOM) because its internal Promise chain relies on browser APIs.
+ *
+ * PDF Info dictionary entries are plain ASCII inside the binary — we scan
+ * the first and last 64 KB where they almost always appear. Page count is
+ * read from the /Count entry in the Pages tree root.
+ */
+export function extractPdfMetadata(filePath: string, buffer: Buffer): BookMetadata {
+  // Read the regions where the Info dict and Pages tree typically live.
+  const chunkSize = 65536
+  const head = buffer.toString('latin1', 0, Math.min(buffer.length, chunkSize))
+  const tail = buffer.toString('latin1', Math.max(0, buffer.length - chunkSize))
+  const text = head + tail
 
-    return {
-      title,
-      author,
-      total_pages: null, // EPUB page count requires layout engine — deferred
-      file_type: 'epub',
-      local_path: filePath,
-      file_size: buffer.length,
-    }
-  } catch {
-    return {
-      title: titleFromPath(filePath),
-      author: null,
-      total_pages: null,
-      file_type: 'epub',
-      local_path: filePath,
-      file_size: buffer.length,
-    }
+  const title = readPdfString(text, 'Title') ?? titleFromPath(filePath)
+  const author = readPdfString(text, 'Author')
+  const totalPages = readPdfPageCount(text)
+
+  return {
+    title,
+    author,
+    total_pages: totalPages,
+    file_type: 'pdf',
+    local_path: filePath,
+    file_size: buffer.length,
   }
+}
+
+function readPdfString(text: string, key: string): string | null {
+  // Matches /Key (literal string). Handles simple PDF escape sequences.
+  // Does not handle hex-encoded or UTF-16BE values (rare in Info dicts).
+  const m = new RegExp(`/${key}\\s*\\(([^)\\\\]*(?:\\\\.[^)\\\\]*)*)\\)`).exec(text)
+  if (!m || !m[1]) return null
+  const val = m[1].replace(/\\n/g, ' ').replace(/\\(.)/g, '$1').trim()
+  return val || null
+}
+
+function readPdfPageCount(text: string): number | null {
+  // /Count N appears in the Pages dictionary (the root of the page tree).
+  // The first occurrence is usually the document total.
+  const m = /\/Count\s+(\d+)/.exec(text)
+  if (!m || !m[1]) return null
+  const n = parseInt(m[1], 10)
+  return Number.isFinite(n) && n > 0 ? n : null
 }

@@ -15,5 +15,5 @@ export type { CreateSessionInput } from './repositories/sessions'
 
 // Supabase JS client + functions (renderer / browser-side use)
 export { supabase } from './supabase'
-export { getBooks, createBook, updateBook, updateLastOpened, deleteBook } from './supabase-books'
+export { getBook, getBooks, createBook, updateBook, updateLastOpened, deleteBook } from './supabase-books'
 export type { CreateBookInput, UpdateBookInput } from './supabase-books'

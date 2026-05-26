@@ -1,23 +1,25 @@
 import { dialog, ipcMain } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { extractPdfMetadata, extractEpubMetadata, extractEpubCover } from './metadata-extractor'
+import { extractEpubInfo, extractPdfMetadata } from './metadata-extractor'
 import type { ImportBookResult } from '../../shared/types'
 
-// IPC channel names — kept as constants to avoid typos across main/preload.
 export const IPC_OPEN_FILE_DIALOG = 'open-file-dialog'
 export const IPC_READ_FILE = 'read-file'
 export const IPC_IMPORT_BOOK = 'import-book'
 
-/**
- * Register all file-related IPC handlers.
- * Call once during app ready, before any window is shown.
- */
+// Prevents a stalled metadata extraction from hanging the IPC channel forever.
+// 30 s is generous — extractEpubInfo typically completes in < 1 s.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Import timed out after ${ms / 1000}s`)), ms)
+    ),
+  ])
+}
+
 export function registerFileHandlers(): void {
-  // Opens the OS-native file picker and returns the chosen path (or null).
-  // We filter to PDF and EPUB because those are the only formats the reader
-  // supports. Returning null instead of throwing lets the renderer handle
-  // cancellation without an error boundary.
   ipcMain.handle(IPC_OPEN_FILE_DIALOG, async () => {
     const result = await dialog.showOpenDialog({
       title: 'Import a Book',
@@ -29,61 +31,43 @@ export function registerFileHandlers(): void {
       ],
       properties: ['openFile'],
     })
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return null
-    }
-
+    if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0] ?? null
   })
 
-  // Reads a local file by absolute path and returns its contents as a Buffer.
-  // The renderer cannot access the filesystem directly (contextIsolation: true),
-  // so all disk I/O must go through this handler.
   ipcMain.handle(IPC_READ_FILE, async (_event, filePath: unknown) => {
-    if (typeof filePath !== 'string') {
-      throw new Error('readFile: filePath must be a string')
-    }
-
-    // Resolve to an absolute path to prevent path traversal.
+    if (typeof filePath !== 'string') throw new Error('readFile: filePath must be a string')
     const resolved = path.resolve(filePath)
-
-    // Confirm the file still exists before reading — import dialogs create a
-    // window of time between selection and read where the file could move.
-    if (!fs.existsSync(resolved)) {
-      throw new Error(`readFile: file not found at ${resolved}`)
-    }
-
+    if (!fs.existsSync(resolved)) throw new Error(`readFile: file not found at ${resolved}`)
     return fs.readFileSync(resolved)
   })
 
-  // Opens the file dialog, reads the file, and extracts metadata in one round-trip.
-  // Returns ImportBookResult so the renderer can upload and persist without a
-  // second IPC call for the file bytes.
   ipcMain.handle(IPC_IMPORT_BOOK, async (_event, filePath: unknown): Promise<ImportBookResult> => {
-    if (typeof filePath !== 'string') {
-      throw new Error('importBook: filePath must be a string')
-    }
+    if (typeof filePath !== 'string') throw new Error('importBook: filePath must be a string')
 
     const resolved = path.resolve(filePath)
-    if (!fs.existsSync(resolved)) {
-      throw new Error(`importBook: file not found at ${resolved}`)
-    }
+    if (!fs.existsSync(resolved)) throw new Error(`importBook: file not found at ${resolved}`)
 
     const buffer = fs.readFileSync(resolved)
-    const ext = path.extname(resolved).toLowerCase()
-    const isEpub = ext === '.epub'
+    const isEpub = path.extname(resolved).toLowerCase() === '.epub'
 
-    const [metadata, cover] = await Promise.all([
-      isEpub ? extractEpubMetadata(resolved, buffer) : extractPdfMetadata(resolved, buffer),
-      isEpub ? extractEpubCover(buffer) : Promise.resolve(null),
-    ])
+    if (isEpub) {
+      const { metadata, cover } = await withTimeout(extractEpubInfo(resolved, buffer), 30_000)
+      return {
+        metadata,
+        fileBuffer: new Uint8Array(buffer),
+        coverBuffer: cover ? new Uint8Array(cover.data) : null,
+        coverMimeType: cover?.mimeType ?? null,
+      }
+    }
 
+    // PDF: synchronous scan — no Promise, no chance of hanging
+    const metadata = extractPdfMetadata(resolved, buffer)
     return {
       metadata,
       fileBuffer: new Uint8Array(buffer),
-      coverBuffer: cover ? new Uint8Array(cover.data) : null,
-      coverMimeType: cover?.mimeType ?? null,
+      coverBuffer: null,
+      coverMimeType: null,
     }
   })
 }

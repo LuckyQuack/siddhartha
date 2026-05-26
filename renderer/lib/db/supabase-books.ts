@@ -11,6 +11,21 @@ export type CreateBookInput = {
   total_pages?: number | null
 }
 
+export async function getBook(bookId: string, userId: string): Promise<Book | null> {
+  const { data, error } = await supabase
+    .from('books')
+    .select('*')
+    .eq('id', bookId)
+    .eq('user_id', userId)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') return null
+    throw new Error(`getBook: ${error.message}`)
+  }
+  return data as Book
+}
+
 export async function getBooks(userId: string): Promise<Book[]> {
   const { data, error } = await supabase
     .from('books')
