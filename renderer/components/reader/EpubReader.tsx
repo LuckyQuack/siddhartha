@@ -38,6 +38,7 @@ interface EpubReaderProps {
 const PAGE_STYLES = `
   img, svg, image {
     max-width: 100% !important;
+    max-height: 100vh !important;
     height: auto !important;
   }
   body { margin: 0 !important; padding: 0 1.5rem !important; box-sizing: border-box; }
@@ -54,6 +55,7 @@ export function EpubReader({ url }: EpubReaderProps) {
     const el = viewerRef.current
     if (!el) return
 
+    let cancelled = false
     let book: EpubBook | null = null
 
     async function init() {
@@ -66,6 +68,7 @@ export function EpubReader({ url }: EpubReaderProps) {
         // Fetch the blob URL → pass as Blob so epub.js detects it as 'binary'
         // and unpacks it correctly. Avoids openAs: 'epub' URL-detection hacks.
         const blob = await fetch(url).then((r) => r.blob())
+        if (cancelled) return
 
         book = ePub(blob)
 
@@ -73,6 +76,7 @@ export function EpubReader({ url }: EpubReaderProps) {
         // set up asynchronously. Calling renderTo before this resolves leaves
         // book.navigation undefined, causing the crash at book.js:483.
         await book.ready
+        if (cancelled) return
 
         const w = el.clientWidth || 800
         const h = el.clientHeight || 600
@@ -91,22 +95,25 @@ export function EpubReader({ url }: EpubReaderProps) {
 
         renditionRef.current = rendition
         await rendition.display()
+        if (cancelled) return
 
         rendition.on('relocated', (loc) => {
           setAtStart(loc.atStart)
           setAtEnd(loc.atEnd)
         })
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load EPUB')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load EPUB')
       }
     }
 
     void init()
 
     return () => {
+      cancelled = true
       renditionRef.current?.destroy()
       renditionRef.current = null
       book?.destroy()
+      el.innerHTML = ''
     }
   }, [url])
 
