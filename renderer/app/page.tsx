@@ -111,6 +111,12 @@ export default function LibraryPage() {
 
   const handleImport = useCallback(async () => {
     if (isDialogOpen || !userId) return
+    if (typeof window === 'undefined' || !window.electron) {
+      setImportError(
+        'Importing only works in the desktop app. Launch it with "npm run electron:dev" — opening localhost in a browser has no file access.'
+      )
+      return
+    }
     setIsDialogOpen(true)
     setImportError(null)
 
