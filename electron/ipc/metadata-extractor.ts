@@ -172,6 +172,24 @@ export async function extractEpubInfo(
       }
     }
 
+    // Normalize cover to 400×600 JPEG so every card in the library grid
+    // displays at a consistent resolution regardless of the source image size.
+    if (cover) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const sharp = require('sharp') as typeof import('sharp')
+        cover = {
+          data: await sharp(cover.data)
+            .resize(400, 600, { fit: 'cover', position: 'centre' })
+            .jpeg({ quality: 85 })
+            .toBuffer(),
+          mimeType: 'image/jpeg',
+        }
+      } catch {
+        // sharp unavailable — keep original
+      }
+    }
+
     return {
       metadata: {
         title,

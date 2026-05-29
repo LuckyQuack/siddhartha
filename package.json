@@ -26,7 +26,9 @@
     "next": "14.2.29",
     "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-reader": "^2.0.15",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -71,5 +73,8 @@
     "linux": {
       "target": "AppImage"
     }
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
   }
 }

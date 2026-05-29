@@ -3,42 +3,44 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
-interface EpubContents {
-  document: Document
-}
-
-interface EpubHook {
-  register(cb: (view: EpubContents) => void): void
-}
-
-interface EpubRendition {
-  display(): Promise<void>
-  prev(): Promise<void>
-  next(): Promise<void>
-  on(event: 'relocated', cb: (loc: EpubLocation) => void): void
-  destroy(): void
-  hooks: { content: EpubHook }
-}
-
-interface EpubLocation {
-  atStart: boolean
-  atEnd: boolean
-}
-
-interface EpubBook {
-  ready: Promise<void>
-  renderTo(
-    el: HTMLElement,
-    opts: { width: number; height: number; spread?: string; flow?: string; manager?: string }
-  ): EpubRendition
-  destroy(): void
-}
-
 interface EpubReaderProps {
   url: string
 }
 
-const PAGE_STYLES = `
+// epubjs types (subset we use)
+interface EpubContents {
+  document: Document
+}
+interface EpubHook {
+  register(cb: (view: EpubContents) => void): void
+}
+interface EpubRendition {
+  display(target?: string): Promise<void>
+  prev(): Promise<void>
+  next(): Promise<void>
+  on(event: string, cb: (loc: EpubLocation) => void): void
+  destroy(): void
+  hooks: { content: EpubHook }
+}
+interface EpubLocation {
+  start: { cfi: string }
+  atStart: boolean
+  atEnd: boolean
+}
+interface EpubBook {
+  loaded: { navigation: Promise<void> }
+  renderTo(
+    el: HTMLElement,
+    opts: { width: number | string; height: number | string; spread?: string; flow?: string; manager?: string }
+  ): EpubRendition
+  destroy(): void
+}
+
+const CONTENT_STYLES = `
+  html, body {
+    background-color: #ffffff !important;
+    color: #1a1a1a !important;
+  }
   img, svg, image {
     max-width: 100% !important;
     max-height: 100vh !important;
@@ -50,6 +52,7 @@ const PAGE_STYLES = `
 export function EpubReader({ url }: EpubReaderProps) {
   const viewerRef = useRef<HTMLDivElement>(null)
   const renditionRef = useRef<EpubRendition | null>(null)
+  const locationRef = useRef<string | null>(null)
   const [atStart, setAtStart] = useState(true)
   const [atEnd, setAtEnd] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,28 +68,24 @@ export function EpubReader({ url }: EpubReaderProps) {
       try {
         const ePubModule = await import('epubjs')
         const ePub = (
-          ePubModule as { default?: (input: Blob) => EpubBook }
-        ).default ?? (ePubModule as unknown as (input: Blob) => EpubBook)
+          ePubModule as unknown as { default?: (input: ArrayBuffer) => EpubBook }
+        ).default ?? (ePubModule as unknown as (input: ArrayBuffer) => EpubBook)
 
-        // Fetch the blob URL → pass as Blob so epub.js detects it as 'binary'
-        // and unpacks it correctly. Avoids openAs: 'epub' URL-detection hacks.
-        const blob = await fetch(url).then((r) => r.blob())
+        // Pre-fetch as ArrayBuffer so epubjs treats it as binary and unpacks
+        // correctly — blob: URLs fail epubjs's URL type detection.
+        const data = await fetch(url).then((r) => r.arrayBuffer())
         if (cancelled) return
 
-        book = ePub(blob)
+        book = ePub(data)
 
-        // Must await book.ready before renderTo — navigation and packaging are
-        // set up asynchronously. Calling renderTo before this resolves leaves
-        // book.navigation undefined, causing the crash at book.js:483.
-        await book.ready
+        // Wait for navigation (TOC) to be parsed — epubjs pattern from react-reader.
+        // This ensures spine, navigation and packaging are ready before renderTo.
+        await book.loaded.navigation
         if (cancelled || !el) return
 
         const w = el.clientWidth || 800
         const h = el.clientHeight || 600
 
-        // 'continuous' manager + 'scrolled' flow renders every spine item
-        // back-to-back in reading order as one scroll, instead of one isolated
-        // spine file per screen.
         const rendition = book.renderTo(el, {
           width: w,
           height: h,
@@ -97,19 +96,21 @@ export function EpubReader({ url }: EpubReaderProps) {
 
         rendition.hooks.content.register((view) => {
           const doc = view.document
-          if (!doc?.head) return
-          if (doc.getElementById('_sids')) return
+          if (!doc?.head || doc.getElementById('_sids')) return
           const style = doc.createElement('style')
           style.id = '_sids'
-          style.textContent = PAGE_STYLES
+          style.textContent = CONTENT_STYLES
           doc.head.appendChild(style)
         })
 
         renditionRef.current = rendition
-        await rendition.display()
+
+        // Resume at last position or start from beginning
+        await rendition.display(locationRef.current ?? undefined)
         if (cancelled) return
 
-        rendition.on('relocated', (loc) => {
+        rendition.on('relocated', (loc: EpubLocation) => {
+          locationRef.current = loc.start.cfi
           setAtStart(loc.atStart)
           setAtEnd(loc.atEnd)
         })

@@ -61,7 +61,7 @@ export function BookCard({ book, onClick, importProgress }: BookCardProps) {
           <img
             src={book.cover_url!}
             alt={book.title}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover"
             draggable={false}
             onError={() => setCoverFailed(true)}
           />
