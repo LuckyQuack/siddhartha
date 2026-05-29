@@ -81,7 +81,7 @@ export function EpubReader({ url }: EpubReaderProps) {
         const w = el.clientWidth || 800
         const h = el.clientHeight || 600
 
-        const rendition = book.renderTo(el, { width: w, height: h, spread: 'none', flow: 'paginated' })
+        const rendition = book.renderTo(el, { width: w, height: h, spread: 'none', flow: 'scrolled-doc' })
 
         rendition.hooks.content.register((view) => {
           const doc = view.document
@@ -127,7 +127,7 @@ export function EpubReader({ url }: EpubReaderProps) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div ref={viewerRef} className="flex-1 min-h-0 overflow-hidden" />
+      <div ref={viewerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" />
       <div className="flex items-center justify-between px-8 py-3 border-t border-white/5 shrink-0">
         <button
           type="button"

@@ -20,7 +20,7 @@ export function BookGrid({ books, onBookClick, importProgress }: BookGridProps) 
           {books.length} {books.length === 1 ? 'book' : 'books'}
         </span>
       </div>
-      <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 160px))' }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 120px))' }}>
         {books.map((book) => (
           <BookCard
             key={book.id}
