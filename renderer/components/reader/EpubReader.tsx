@@ -27,7 +27,10 @@ interface EpubLocation {
 
 interface EpubBook {
   ready: Promise<void>
-  renderTo(el: HTMLElement, opts: { width: number; height: number; spread?: string; flow?: string }): EpubRendition
+  renderTo(
+    el: HTMLElement,
+    opts: { width: number; height: number; spread?: string; flow?: string; manager?: string }
+  ): EpubRendition
   destroy(): void
 }
 
@@ -76,12 +79,21 @@ export function EpubReader({ url }: EpubReaderProps) {
         // set up asynchronously. Calling renderTo before this resolves leaves
         // book.navigation undefined, causing the crash at book.js:483.
         await book.ready
-        if (cancelled) return
+        if (cancelled || !el) return
 
         const w = el.clientWidth || 800
         const h = el.clientHeight || 600
 
-        const rendition = book.renderTo(el, { width: w, height: h, spread: 'none', flow: 'scrolled-doc' })
+        // 'continuous' manager + 'scrolled' flow renders every spine item
+        // back-to-back in reading order as one scroll, instead of one isolated
+        // spine file per screen.
+        const rendition = book.renderTo(el, {
+          width: w,
+          height: h,
+          spread: 'none',
+          manager: 'continuous',
+          flow: 'scrolled',
+        })
 
         rendition.hooks.content.register((view) => {
           const doc = view.document
