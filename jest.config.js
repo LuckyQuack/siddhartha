@@ -3,7 +3,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/__tests__'],
-  testPathIgnorePatterns: ['/node_modules/', '/__tests__/__mocks__/'],
+  testPathIgnorePatterns: ['/node_modules/', '/__tests__/__mocks__/', '/__tests__/electron/db/setup\\.ts$'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/renderer/$1',
     '^@shared/(.*)$': '<rootDir>/shared/$1',

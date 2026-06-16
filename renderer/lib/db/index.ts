@@ -1,19 +1,7 @@
-// Barrel export for the entire db layer.
-// Components import from here — never directly from sub-modules.
+// Renderer-side DB layer.
+// Step 1: only Supabase JS remains here; Prisma was deleted.
+// Step 2 will replace these Supabase exports with `window.api.*` IPC calls.
 
-// Prisma client + repositories (main-process / server-side use)
-export { prisma } from './client'
-
-export { bookRepository } from './repositories/books'
-export type { CreateBookInput as PrismaCreateBookInput } from './repositories/books'
-
-export { highlightRepository } from './repositories/highlights'
-export type { CreateHighlightInput, HighlightWithThemes } from './repositories/highlights'
-
-export { sessionRepository } from './repositories/sessions'
-export type { CreateSessionInput } from './repositories/sessions'
-
-// Supabase JS client + functions (renderer / browser-side use)
 export { supabase } from './supabase'
 export { getBook, getBooks, createBook, updateBook, updateLastOpened, deleteBook } from './supabase-books'
 export type { CreateBookInput, UpdateBookInput } from './supabase-books'
