@@ -15,6 +15,7 @@ interface ReaderPageProps {
 
 export default function ReaderPage({ params }: ReaderPageProps) {
   const [book, setBook] = useState<Book | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const blobUrlRef = useRef<string | null>(null)
@@ -24,6 +25,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { setError('Not signed in'); return }
+
+        setUserId(user.id)
 
         const record = await getBook(params.bookId, user.id)
         if (!record) { setError('Book not found'); return }
@@ -84,14 +87,14 @@ export default function ReaderPage({ params }: ReaderPageProps) {
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-red-400 text-center px-6">{error}</p>
         </div>
-      ) : !fileUrl ? (
+      ) : !fileUrl || !userId || !book ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-[var(--text-muted)]">Loading…</p>
         </div>
-      ) : book?.file_type === 'pdf' ? (
-        <PdfReader url={fileUrl} />
+      ) : book.file_type === 'pdf' ? (
+        <PdfReader url={fileUrl} bookId={book.id} userId={userId} />
       ) : (
-        <EpubReader url={fileUrl} />
+        <EpubReader url={fileUrl} bookId={book.id} userId={userId} />
       )}
     </main>
   )

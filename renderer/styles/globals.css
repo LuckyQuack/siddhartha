@@ -59,6 +59,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── PDF text layer (enables text selection over canvas) ───────────────────── */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  /* container passes clicks through; spans capture them */
+  pointer-events: none;
+}
+
+.pdf-text-layer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  pointer-events: auto;
+}
+
+.pdf-text-layer ::selection {
+  background: rgba(251, 191, 36, 0.35);
+  color: transparent;
+}
+
 /* ── Electron window drag region ────────────────────────────────────────────── */
 /* The title-bar area is drag-able so the user can move the frameless window. */
 .drag-region {
