@@ -13,14 +13,19 @@ interface BookGridProps {
 
 export function BookGrid({ books, onBookClick, importProgress }: BookGridProps) {
   return (
-    <div className="w-full px-6 py-6">
-      <div className="flex items-baseline justify-between mb-6">
-        <h1 className="text-base font-semibold text-[var(--text-primary)] tracking-tight">Your Library</h1>
-        <span className="text-xs text-[var(--text-muted)]">
-          {books.length} {books.length === 1 ? 'book' : 'books'}
+    <div className="px-8 py-8">
+      <div className="flex items-baseline justify-between mb-8">
+        <h1 className="font-display text-2xl font-semibold text-[var(--text-primary)]">
+          Your Library
+        </h1>
+        <span className="font-serif text-xs text-[var(--text-muted)] italic">
+          {books.length} {books.length === 1 ? 'volume' : 'volumes'}
         </span>
       </div>
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 120px))' }}>
+      <div
+        className="grid gap-6"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 150px))' }}
+      >
         {books.map((book) => (
           <BookCard
             key={book.id}

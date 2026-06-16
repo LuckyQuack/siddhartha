@@ -7,20 +7,33 @@ module.exports = {
     path.join(__dirname, './components/**/*.{ts,tsx}'),
     path.join(__dirname, './lib/**/*.{ts,tsx}'),
   ],
-  darkMode: 'class',
   theme: {
     extend: {
-      colors: {
-        paper: {
-          50: '#faf9f7',
-          100: '#f2f0ec',
-          200: '#e8e4dd',
-          900: '#1c1917',
-        },
-      },
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
-        serif: ['var(--font-lora)', 'Georgia', 'serif'],
+        display: ['var(--font-playfair)', 'Georgia', 'serif'],
+        serif:   ['var(--font-source-serif)', 'Georgia', 'serif'],
+      },
+      colors: {
+        parchment: {
+          50:  '#faf7f2',
+          100: '#f5efe6',
+          200: '#ede5d8',
+          300: '#e0d5c4',
+          400: '#c8b99a',
+        },
+        ink: {
+          DEFAULT: '#2c1810',
+          light:   '#6b4c3b',
+          muted:   '#a08060',
+          deep:    '#3d2b1f',
+        },
+        teal: {
+          DEFAULT: '#4a7c6f',
+          dark:    '#3d6760',
+        },
+        amber: {
+          warm: '#c8964a',
+        },
       },
     },
   },

@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { supabase } from '@/lib/db/supabase'
-import { getBook, updateLastOpened } from '@/lib/db'
+import { getBook, touchLastOpened } from '@/lib/db'
 import type { Book } from '@shared/types'
 import { PdfReader } from '@/components/reader/PdfReader'
 import { EpubReader } from '@/components/reader/EpubReader'
@@ -23,28 +22,33 @@ export default function ReaderPage({ params }: ReaderPageProps) {
   useEffect(() => {
     async function load() {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { setError('Not signed in'); return }
-
-        setUserId(user.id)
-
-        const record = await getBook(params.bookId, user.id)
-        if (!record) { setError('Book not found'); return }
-        setBook(record)
-
-        if (!record.file_path) {
-          setError('File still uploading — wait a moment and try again')
+        if (typeof window === 'undefined' || !window.api || !window.electron) {
+          setError('Reader requires the desktop app')
           return
         }
 
-        void updateLastOpened(record.id)
+        const uid = await window.api.user.getOrCreateId()
+        setUserId(uid)
 
-        const { data: blob, error: dlErr } = await supabase.storage
-          .from('books')
-          .download(record.file_path)
+        const record = await getBook(params.bookId, uid)
+        if (!record) {
+          setError('Book not found')
+          return
+        }
+        setBook(record)
 
-        if (dlErr) throw new Error(dlErr.message)
+        if (!record.file_path) {
+          setError('File path missing — try re-importing the book')
+          return
+        }
 
+        void touchLastOpened(record.id, uid)
+
+        // Read the local file via IPC and create a blob URL for the reader.
+        const buffer = await window.electron.readFile(record.file_path)
+        const mimeType =
+          record.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip'
+        const blob = new Blob([new Uint8Array(buffer)], { type: mimeType })
         const url = URL.createObjectURL(blob)
         blobUrlRef.current = url
         setFileUrl(url)
@@ -61,22 +65,22 @@ export default function ReaderPage({ params }: ReaderPageProps) {
   }, [params.bookId])
 
   return (
-    <main className="flex flex-col h-screen overflow-hidden">
-      <header className="drag-region flex items-center gap-4 px-6 py-4 border-b border-white/5 shrink-0">
+    <main className="flex flex-col h-screen overflow-hidden bg-[var(--surface-base)]">
+      <header className="drag-region flex items-center gap-4 px-6 py-3 border-b border-[var(--border-subtle)] shrink-0 bg-[var(--surface-raised)]">
         <Link
           href="/"
-          className="no-drag flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          className="no-drag flex items-center gap-1.5 font-serif text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-3.5 h-3.5" />
           Library
         </Link>
         {book && (
           <>
-            <div className="h-4 w-px bg-white/10" />
-            <span className="text-sm text-[var(--text-primary)] truncate">{book.title}</span>
+            <div className="h-3.5 w-px bg-[var(--border-subtle)]" />
+            <span className="font-serif text-sm text-[var(--text-primary)] truncate">{book.title}</span>
             {book.author && (
-              <span className="text-sm text-[var(--text-muted)] truncate hidden sm:block">
-                — {book.author}
+              <span className="font-serif text-sm text-[var(--text-muted)] italic truncate hidden sm:block">
+                {book.author}
               </span>
             )}
           </>
@@ -84,12 +88,12 @@ export default function ReaderPage({ params }: ReaderPageProps) {
       </header>
 
       {error ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-red-400 text-center px-6">{error}</p>
+        <div className="flex-1 flex items-center justify-center px-6">
+          <p className="font-serif text-sm text-red-600 text-center">{error}</p>
         </div>
       ) : !fileUrl || !userId || !book ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-[var(--text-muted)]">Loading…</p>
+          <p className="font-serif text-sm text-[var(--text-muted)] italic">Loading…</p>
         </div>
       ) : book.file_type === 'pdf' ? (
         <PdfReader url={fileUrl} bookId={book.id} userId={userId} />

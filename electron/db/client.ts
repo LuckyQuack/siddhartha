@@ -6,18 +6,89 @@ import { randomUUID } from 'crypto'
 let dbInstance: Database.Database | null = null
 let userIdCache: string | null = null
 
-const MIGRATIONS_DIR = path.join(__dirname, 'migrations')
+// Migrations embedded so they work whether the module is loaded from TypeScript
+// source (ts-jest, __dirname = electron/db/) or compiled JS
+// (electron:dev, __dirname = electron/dist/electron/db/ where no .sql files exist).
+const EMBEDDED_MIGRATIONS: Array<{ name: string; sql: string }> = [
+  {
+    name: '001_initial.sql',
+    sql: `
+CREATE TABLE IF NOT EXISTS users (
+  id          TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS books (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL,
+  author        TEXT,
+  file_path     TEXT,
+  file_type     TEXT CHECK (file_type IN ('pdf', 'epub')),
+  cover_path    TEXT,
+  total_pages   INTEGER,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  last_opened   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_books_user ON books(user_id);
+
+CREATE TABLE IF NOT EXISTS highlights (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id         TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  selected_text   TEXT NOT NULL,
+  context_before  TEXT NOT NULL DEFAULT '',
+  context_after   TEXT NOT NULL DEFAULT '',
+  user_note       TEXT,
+  chapter         TEXT,
+  page_number     INTEGER,
+  position_pct    REAL CHECK (position_pct IS NULL OR (position_pct BETWEEN 0 AND 1)),
+  session_id      TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_highlights_book ON highlights(book_id);
+CREATE INDEX IF NOT EXISTS idx_highlights_user ON highlights(user_id);
+CREATE INDEX IF NOT EXISTS idx_highlights_session ON highlights(session_id);
+
+CREATE TABLE IF NOT EXISTS reading_sessions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at    TEXT,
+  pages_read  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_book ON reading_sessions(book_id);
+    `.trim(),
+  },
+]
 
 export function loadMigrationFiles(): Array<{ name: string; sql: string }> {
-  if (!fs.existsSync(MIGRATIONS_DIR)) return []
-  return fs
-    .readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((name) => ({
-      name,
-      sql: fs.readFileSync(path.join(MIGRATIONS_DIR, name), 'utf-8'),
-    }))
+  // Prefer disk files when they exist (ts-jest runs from source __dirname).
+  // Fall back to embedded when running from a compiled dist directory.
+  try {
+    const dir = path.join(__dirname, 'migrations')
+    if (fs.existsSync(dir)) {
+      const files = fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith('.sql'))
+        .sort()
+      if (files.length > 0) {
+        return files.map((name) => ({
+          name,
+          sql: fs.readFileSync(path.join(dir, name), 'utf-8'),
+        }))
+      }
+    }
+  } catch {
+    // fall through to embedded
+  }
+  return EMBEDDED_MIGRATIONS
 }
 
 export function applyMigrations(db: Database.Database): void {

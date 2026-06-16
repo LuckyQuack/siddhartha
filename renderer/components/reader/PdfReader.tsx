@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { createHighlight } from '@/lib/db/supabase-highlights'
+import { createHighlight } from '@/lib/db'
 import { extractContext, scrollPositionPct } from '@/lib/reader/context'
 import { HighlightTooltip } from './HighlightTooltip'
 

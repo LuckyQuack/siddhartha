@@ -1,45 +1,49 @@
 /**
  * @jest-environment jsdom
  *
- * Bug: EpubReader called ePub(url) without { openAs: 'epub' }, so epub.js
- * treated blob URLs as directory paths and fetched non-existent sub-files.
- *
- * Fix: ePub(url, { openAs: 'epub' }) forces epub.js to download the URL as
- * a packed zip and unpack it — the correct path for blob: and http: URLs.
+ * EpubReader fetches the blob URL as an ArrayBuffer and passes it directly
+ * to ePub() — this avoids the epub.js bug where blob: URLs were treated as
+ * directory paths and caused 404s on sub-resource fetches.
  */
 
 import '@testing-library/jest-dom'
 import React from 'react'
 import { render, waitFor } from '@testing-library/react'
 
-// Define mocks INSIDE the factory to avoid jest hoisting/closure issues
+// Mock fetch so jsdom doesn't error on network calls
+const mockArrayBuffer = new ArrayBuffer(8)
+global.fetch = jest.fn().mockResolvedValue({
+  arrayBuffer: () => Promise.resolve(mockArrayBuffer),
+}) as jest.Mock
+
 jest.mock('epubjs', () => {
   const mockRendition = {
     display: jest.fn().mockResolvedValue(undefined),
     on: jest.fn(),
     destroy: jest.fn(),
+    hooks: { content: { register: jest.fn() } },
   }
   const mockBook = {
+    loaded: { navigation: Promise.resolve() },
     renderTo: jest.fn().mockReturnValue(mockRendition),
     destroy: jest.fn(),
   }
   const ePub = jest.fn().mockReturnValue(mockBook)
-  // __esModule: true prevents esModuleInterop's __importDefault from double-wrapping
-  // the mock, which would make .default an object rather than the callable jest.fn()
   return { __esModule: true, default: ePub }
 })
 
 import { EpubReader } from '../../renderer/components/reader/EpubReader'
 
 describe('EpubReader', () => {
-  it('calls epub.js with openAs: epub so blob URLs are loaded as packed EPUBs', async () => {
+  it('fetches the URL and passes ArrayBuffer to epub.js (avoids blob URL sub-resource bug)', async () => {
     const blobUrl = 'blob:http://localhost:3000/test-uuid-1234'
-    render(<EpubReader url={blobUrl} />)
+    render(<EpubReader url={blobUrl} bookId="test-book" userId="test-user" />)
 
     const ePub = (jest.requireMock('epubjs') as { default: jest.Mock }).default
 
     await waitFor(() => expect(ePub).toHaveBeenCalled())
 
-    expect(ePub).toHaveBeenCalledWith(blobUrl, { openAs: 'epub' })
+    expect(global.fetch).toHaveBeenCalledWith(blobUrl)
+    expect(ePub).toHaveBeenCalledWith(mockArrayBuffer)
   })
 })

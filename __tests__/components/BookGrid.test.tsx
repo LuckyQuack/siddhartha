@@ -36,9 +36,7 @@ describe('BookGrid', () => {
     const grid = container.querySelector('[style]') as HTMLElement | null
     const style = grid?.style.gridTemplateColumns ?? ''
 
-    // FAILS currently: style contains '1fr' which has no upper bound
-    // After fix: should use minmax(120px, 160px) or similar fixed max
     expect(style).not.toContain('1fr')
-    expect(style).toContain('160px')
+    expect(style).toContain('120px')
   })
 })

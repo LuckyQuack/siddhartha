@@ -1,7 +1,17 @@
-// Renderer-side DB layer.
-// Step 1: only Supabase JS remains here; Prisma was deleted.
-// Step 2 will replace these Supabase exports with `window.api.*` IPC calls.
+// Renderer-side DB layer — all exports backed by IPC → SQLite.
+export {
+  getOrCreateUserId,
+  listBooks,
+  getBook,
+  createBook,
+  updateBook,
+  deleteBook,
+  touchLastOpened,
+  saveCover,
+  createHighlight,
+  listHighlightsByBook,
+  startSession,
+  endSession,
+} from './api'
 
-export { supabase } from './supabase'
-export { getBook, getBooks, createBook, updateBook, updateLastOpened, deleteBook } from './supabase-books'
-export type { CreateBookInput, UpdateBookInput } from './supabase-books'
+export type { CreateBookInput, UpdateBookInput, CreateHighlightInput } from './api'

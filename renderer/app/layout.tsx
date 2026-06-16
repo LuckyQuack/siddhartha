@@ -1,35 +1,28 @@
 import type { Metadata } from 'next'
-import { Inter, Lora } from 'next/font/google'
+import { Playfair_Display, Source_Serif_4 } from 'next/font/google'
 import '../styles/globals.css'
 
-// Inter for UI chrome — neutral, legible, modern.
-const inter = Inter({
+const playfair = Playfair_Display({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-playfair',
   display: 'swap',
 })
 
-// Lora for reading body text — a well-hinted serif with warm character.
-const lora = Lora({
+const sourceSerif = Source_Serif_4({
   subsets: ['latin'],
-  variable: '--font-lora',
+  variable: '--font-source-serif',
   display: 'swap',
+  weight: ['300', '400', '600'],
 })
 
 export const metadata: Metadata = {
   title: 'Siddhartha',
-  description: 'Your AI-powered reading companion',
+  description: 'Your reading companion',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    // dark class on html enables Tailwind dark mode globally.
-    // We start in dark mode — the reading experience is designed dark-first.
-    <html lang="en" className={`${inter.variable} ${lora.variable} dark`}>
+    <html lang="en" className={`${playfair.variable} ${sourceSerif.variable}`}>
       <body className="min-h-screen bg-[var(--surface-base)] text-[var(--text-primary)]">
         {children}
       </body>

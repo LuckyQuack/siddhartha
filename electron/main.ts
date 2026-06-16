@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu } from 'electron'
 import * as path from 'path'
 import { registerFileHandlers } from './ipc/file-handlers'
+import { registerDbHandlers } from './ipc/db-handlers'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -108,6 +109,7 @@ app.whenReady().then(() => {
   // Register IPC handlers before creating the window so they are available
   // for any invoke calls the renderer makes during its initial render.
   registerFileHandlers()
+  registerDbHandlers()
   buildAppMenu()
   createWindow()
 

@@ -111,7 +111,68 @@ export interface ImportBookResult {
   coverMimeType: string | null
 }
 
-// ─── IPC message types ─────────────────────────────────────────────────────────
+// ─── IPC input types ──────────────────────────────────────────────────────────
+
+export interface CreateBookInput {
+  user_id: string
+  title: string
+  author?: string | null
+  file_type?: 'pdf' | 'epub' | null
+}
+
+export interface UpdateBookInput {
+  title?: string
+  author?: string | null
+  /** Absolute local path to the book file on disk. */
+  file_path?: string | null
+  total_pages?: number | null
+  /** Absolute local path to the saved cover image. */
+  cover_path?: string | null
+}
+
+export interface CreateHighlightInput {
+  user_id: string
+  book_id: string
+  selected_text: string
+  context_before: string
+  context_after: string
+  user_note?: string | null
+  chapter?: string | null
+  page_number?: number | null
+  position_pct?: number | null
+  session_id?: string | null
+}
+
+// ─── IPC DB API ───────────────────────────────────────────────────────────────
+// Exposed on window.api via contextBridge. All calls resolve via IPC to
+// the SQLite repositories in the Electron main process.
+
+export interface DbAPI {
+  books: {
+    list: (userId: string) => Promise<Book[]>
+    create: (input: CreateBookInput) => Promise<Book>
+    get: (id: string, userId: string) => Promise<Book | null>
+    update: (id: string, userId: string, patch: UpdateBookInput) => Promise<Book>
+    delete: (id: string, userId: string) => Promise<void>
+    touch: (id: string, userId: string) => Promise<void>
+    /** Save a cover image buffer to userData/covers/ and return the absolute path. */
+    saveCover: (bookId: string, data: Uint8Array, mimeType: string) => Promise<string>
+  }
+  highlights: {
+    create: (input: CreateHighlightInput) => Promise<Highlight>
+    listByBook: (bookId: string, userId: string) => Promise<Highlight[]>
+  }
+  sessions: {
+    start: (input: { user_id: string; book_id: string }) => Promise<ReadingSession>
+    end: (id: string, pagesRead?: number | null) => Promise<ReadingSession | null>
+  }
+  user: {
+    /** Returns the stable local user UUID, creating it on first launch. */
+    getOrCreateId: () => Promise<string>
+  }
+}
+
+// ─── IPC file-handler types ───────────────────────────────────────────────────
 // Used to type the window.electron bridge defined in electron/preload.ts.
 
 export interface ElectronAPI {
@@ -126,10 +187,11 @@ export interface ElectronAPI {
   onMenuEvent: (event: string, callback: () => void) => void
 }
 
-// Augment the global Window type so renderer code can access the bridge
+// Augment the global Window type so renderer code can access the bridges
 // without unsafe casts.
 declare global {
   interface Window {
     electron: ElectronAPI
+    api: DbAPI
   }
 }

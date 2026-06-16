@@ -2,73 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens ──────────────────────────────────────────────────────────── */
+/* ── Design tokens — warm parchment ─────────────────────────────────────────── */
 :root {
-  /* Surface hierarchy — light mode defaults */
-  --surface-base: #faf9f7;
-  --surface-raised: #ffffff;
-  --surface-overlay: #f2f0ec;
+  --surface-base:    #f5efe6;
+  --surface-raised:  #ede5d8;
+  --surface-overlay: #e0d5c4;
+  --surface-ink:     #3d2b1f;
 
-  /* Text */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-primary:   #2c1810;
+  --text-secondary: #6b4c3b;
+  --text-muted:     #a08060;
 
-  /* Brand accent — warm amber for highlighting */
-  --accent-highlight: #fbbf24;
-  --accent-highlight-bg: #fffbeb;
+  --accent-primary:   #3d2b1f;
+  --accent-teal:      #4a7c6f;
+  --accent-teal-dim:  #3d6760;
+  --accent-highlight: #c8964a;
+  --accent-highlight-bg: rgba(200, 150, 74, 0.15);
 
-  /* Motion */
-  --duration-fast: 120ms;
+  --border-subtle: rgba(61, 43, 31, 0.10);
+  --border-soft:   rgba(61, 43, 31, 0.18);
+
+  --duration-fast:   120ms;
   --duration-normal: 240ms;
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.dark {
-  --surface-base: #0f0f0f;
-  --surface-raised: #1a1a1a;
-  --surface-overlay: #242424;
+/* ── Base ────────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-
-  --accent-highlight: #fbbf24;
-  --accent-highlight-bg: rgba(251, 191, 36, 0.12);
-}
-
-/* ── Base reset ─────────────────────────────────────────────────────────────── */
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
+html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  /* Prevent rubber-band scroll — Electron apps aren't web pages. */
   overscroll-behavior: none;
 }
 
 body {
   background-color: var(--surface-base);
   color: var(--text-primary);
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-source-serif), Georgia, serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── PDF text layer (enables text selection over canvas) ───────────────────── */
+/* ── PDF text layer ──────────────────────────────────────────────────────────── */
 .pdf-text-layer {
   position: absolute;
   inset: 0;
   overflow: hidden;
   line-height: 1;
-  /* container passes clicks through; spans capture them */
   pointer-events: none;
 }
-
 .pdf-text-layer span {
   color: transparent;
   position: absolute;
@@ -77,18 +61,48 @@ body {
   transform-origin: 0% 0%;
   pointer-events: auto;
 }
-
 .pdf-text-layer ::selection {
-  background: rgba(251, 191, 36, 0.35);
+  background: var(--accent-highlight-bg);
   color: transparent;
 }
 
-/* ── Electron window drag region ────────────────────────────────────────────── */
-/* The title-bar area is drag-able so the user can move the frameless window. */
-.drag-region {
-  -webkit-app-region: drag;
+/* ── EPUB chapter typography ─────────────────────────────────────────────────── */
+article h1, article h2, article h3, article h4 {
+  font-family: var(--font-playfair), Georgia, serif;
+  color: var(--text-primary);
+  line-height: 1.3;
+  margin: 1.5em 0 0.5em;
+}
+article h1 { font-size: 1.6rem; }
+article h2 { font-size: 1.3rem; }
+article h3 { font-size: 1.1rem; }
+article p {
+  font-family: var(--font-source-serif), Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  margin: 0 0 1em;
+}
+article img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 1.5em auto;
+  display: block;
+}
+article blockquote {
+  border-left: 3px solid var(--accent-highlight);
+  margin: 1.5em 0;
+  padding: 0.5em 0 0.5em 1.25em;
+  color: var(--text-muted);
+  font-style: italic;
+}
+article a { color: var(--accent-teal); text-decoration: underline; }
+article ::selection {
+  background: var(--accent-highlight-bg);
+  color: var(--text-primary);
 }
 
-.no-drag {
-  -webkit-app-region: no-drag;
-}
+/* ── Electron window chrome ──────────────────────────────────────────────────── */
+.drag-region { -webkit-app-region: drag; }
+.no-drag     { -webkit-app-region: no-drag; }
